@@ -20,67 +20,80 @@ A local application for downloading, parsing, and normalizing order data from De
 
 ## Installation
 
-1. Clone this repository.
-2. Create and activate a virtual environment:
-   ```cmd
-   python -m venv venv
-   call venv\Scripts\activate
+The setup below is written for Windows PowerShell.
+
+1. Open PowerShell in the project folder.
+2. Create and activate a virtual environment named `.venv`:
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
    ```
 3. Install dependencies:
-   ```cmd
-   pip install -e .
+   ```powershell
+   pip install -e ".[dev]"
    playwright install chromium
    ```
+
+If PowerShell blocks activation, run this once in the same terminal first:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
 
 ## Configuration
 
 Copy the example configuration files and edit them to match your setup:
 
-```cmd
-copy config.example.yaml config.yaml
-copy selectors.example.yaml selectors.yaml
+```powershell
+Copy-Item config.example.yaml config.yaml
+Copy-Item selectors.example.yaml selectors.yaml
 ```
 
 Update `config.yaml` with your preferred locations, channels, and statuses to filter by.
 
 ## Usage
 
-The application is controlled via a command-line interface (CLI) or the `run.bat` helper script.
+The application is controlled via the CLI or the `run.bat` helper script.
 
 ### 1. Calibrate Locators
 
-Before the first run, or if the Deliverect interface changes, run the calibration wizard to discover the necessary UI elements:
+Before the first run, or if the Deliverect interface changes, run the calibration wizard:
 
-```cmd
-run.bat calibrate
+```powershell
+.\run.bat calibrate
 ```
 
-This will open a browser, prompt you to log in, and guide you through identifying buttons and menus. The results are saved to `selectors.yaml`.
+This opens a browser, prompts you to log in, and guides you through identifying the buttons and menus used by Deliverect. The results are saved to `selectors.yaml`.
 
 ### 2. Run Sync
 
 To start a full sync operation (export, download, import, format to Excel):
 
-```cmd
-run.bat sync
+```powershell
+.\run.bat sync
 ```
 
-You can also run a dry-run (won't save data) or export-only:
+Useful variants:
 
-```cmd
-run.bat sync --dry-run
-run.bat sync --export-only
+```powershell
+.\run.bat sync --dry-run
+.\run.bat sync --export-only
 ```
 
 ### 3. View Dashboard
 
 To view the synchronization history and data quality metrics:
 
-```cmd
-run.bat dashboard
+```powershell
+.\run.bat dashboard
 ```
 
-This will start a local Streamlit server and open it in your browser.
+## Troubleshooting
+
+- In PowerShell, batch files must be prefixed with `.\\` or `./`.
+- The launcher expects a virtual environment named `.venv`.
+- If you see an authentication/session error, run `./run.bat reauthenticate`.
+- If you created a different virtual environment name, recreate it as `.venv` or adjust the launcher accordingly.
 
 ## Security Note
 

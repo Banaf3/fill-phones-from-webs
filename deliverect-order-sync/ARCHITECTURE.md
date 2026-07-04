@@ -1,98 +1,250 @@
-# Deliverect Order Sync — Comprehensive System Architecture
+# Deliverect Order Sync — Current System Architecture
 
-This document serves as the **Single Source of Truth** for the system's design, architecture, and data structures. It provides developers (and AI assistants) with enough context to understand, maintain, and extend the system without reading the entire codebase.
-
----
-
-## 1. System Overview & Philosophy
-
-The Deliverect Order Sync application is a **local, secure, browser-automation tool** designed to download and normalize order data from a restaurant's Deliverect portal. 
-
-**Core Principles:**
-1. **Event Sourcing & Immutability:** Order statuses are treated as immutable events in an `order_events` append-only log. The canonical `orders` table only maintains the summarized current state, updated via strict timestamp precedence rules.
-2. **Authoritative Item Snapshots:** Order items are deduplicated using a snapshot versioning policy. A newer, complete export snapshot will authoritatively replace an older active item set.
-3. **Security & Privacy (PII):** Passwords are never stored. Session cookies are serialized and encrypted. Customer PII (Name, Phone, Email, Address) is redacted from raw JSON and encrypted at rest in SQLite `BLOB` columns using `Fernet` keys held in the Windows Credential Manager. 
-4. **Resilient Locking & Concurrency:** A database-backed distributed lock (`run_locks`) prevents concurrent sync conflicts, utilizing lease versions, heartbeats, and safe stale-lock recovery.
+This document reflects the implementation that currently exists in the repository. It is intended to be a practical reference for developers and AI assistants working on the project.
 
 ---
 
-## 2. Component Architecture
+## 1. Purpose and Scope
 
-### 2.1. CLI Layer (`src/deliverect_sync/cli.py`)
-Exposes commands:
-- `sync`: Runs the end-to-end extraction and normalization pipeline using Playwright.
-- `import-file [PATH]`: Manually imports a downloaded CSV, operating completely offline.
-- `calibrate`: Interactive wizard to re-map UI locators if Deliverect updates its interface.
-- `login` / `reauthenticate`: Standalone commands to handle manual auth flow.
-- `status`: Displays current job locks and synchronization state.
-- `reset-database`: Creates a safe checkpointed SQLite backup before wiping the database (requires confirmation).
-- `purge-expired`: Cleans up historical data based on retention policies.
+Deliverect Order Sync is a Windows-first desktop automation tool that:
 
-### 2.2. Browser & Workflow Orchestration
-- **Session Manager (`session_manager.py`)**: Serializes Playwright context state to JSON, encrypts it using `cryptography.fernet`, and stores it locally under the `deliverect_sync_auth_state_key` namespace.
-- **Download & File Lifecycle (`download_manager.py`, `export_workflow.py`)**: 
-  - Tracks files by `SourceFileOrigin` (`AUTOMATED_DOWNLOAD` vs `USER_SUPPLIED`).
-  - **Deletion Policy:** Automatically downloaded CSVs are strictly deleted *only* after validation succeeds, hashes are recorded, DB commits, and no further workflow stages need them. User-supplied files are *never* modified or deleted.
+- opens a browser session to Deliverect,
+- logs in manually or reuses saved auth state,
+- navigates to the Orders and Operations pages,
+- requests an export,
+- downloads the resulting CSV,
+- imports the CSV into a local SQLite database,
+- stores encrypted PII when enabled,
+- and produces an Excel workbook and a small dashboard.
 
-### 2.3. Data Ingestion & Normalization (`src/deliverect_sync/importers/` & `normalization/`)
-- **Header Mapper (`header_mapper.py`)**: Uses strict boundaries: exact matches, explicit aliases, and restricted fuzzy matching. Ambiguous mappings for critical fields require explicit review (`REQUIRED_REVIEW`).
-- **Order Importer (`order_importer.py`)**:
-  - Generates a **Canonical Business Key** in the following fallback hierarchy to prevent multi-tenant and location collisions:
-    1. `deliverect:{account_key}:{deliverect_order_id}`
-    2. `channel:{account_key}:{channel}:{location_key}:{channel_order_id}`
-    3. `receipt:{account_key}:{channel}:{location_key}:{receipt_id}`
-  - If identity is unresolvable, the row is flagged as `IDENTITY_UNRESOLVED` (requires review). Do not use row numbers as identity.
-  - **Item Fingerprints**: Resolves exact items via a fingerprint hash of (PLU, normalized name, quantity, unit price, line total, parent relationship), assigning a deterministic `occurrence_index` to handle identical duplicates correctly.
-- **Normalizers**:
-  - Parses Arabic digits (`١٥٠.٥٠`) into strict Python `Decimal` objects.
-  - Normalizes numbers to E.164 (`+966...`).
-
-### 2.4. Storage & Export (`src/deliverect_sync/storage/` & `exporters/`)
-- **SQLite Database (`database.py`)**: Uses WAL mode.
-- **Excel Exporter (`excel_exporter.py`)**:
-  - Formats monetary columns strictly as numeric Excel cells to preserve `Decimal` precision without Pandas floating-point coercion.
-  - Prepends `'` (Formula Injection protection) strictly to untrusted text cells (not explicit numeric or boolean fields).
+The system is implemented as a Python package with a Typer-based CLI and a Playwright-driven browser workflow.
 
 ---
 
-## 3. Data Models & Schemas
+## 2. Current Runtime Architecture
 
-Key SQLite tables include:
+### 2.1 CLI entrypoint
+The main user-entry module is [src/deliverect_sync/cli.py](src/deliverect_sync/cli.py).
 
-- **`run_locks`**: Distributed lock table tracking `lock_name`, `owner_pid`, `owner_host`, `lease_version`, `acquired_at`, and `heartbeat_at`.
-- **`source_files`**: Tracks downloaded CSV files, distinguishing `AUTOMATED_DOWNLOAD` from `USER_SUPPLIED` via the `origin` field.
-- **`orders`**: Canonical representation of an order (Summarized state).
-  - *Identities*: `business_key`, `location_key`, `location_key_source`.
-  - *Current Status*: `current_status`, `current_status_time_quality` (Updated via precedence: `AUTHORITATIVE` > `INFERRED` > `OBSERVED_ONLY` > `UNKNOWN`).
-  - *Financials*: `order_total`, `subtotal`, etc. (Stored as TEXT in SQLite for exact Decimal precision).
-  - *Encrypted PII*: `customer_name_encrypted`, `customer_phone_e164_encrypted`, `delivery_address_encrypted` (Stored strictly as SQLite `BLOB`s).
-- **`order_events`**: Append-only log of status history.
-  - *Deduplication*: `UNIQUE(source_file_id, source_row_number, event_kind)` (same-file), `UNIQUE(order_id, canonical_event_hash)` (cross-file).
-- **`order_item_snapshots`**: Authoritative snapshot versions of an order's items (`is_complete` flag).
-- **`order_items`**: Line items belonging to a snapshot. Unique constraint: `UNIQUE(order_id, item_fingerprint, occurrence_index)`.
-- **`raw_export_rows`**: Auditing table storing `redacted_json` (TEXT) and optionally `encrypted_original_json` (BLOB) if retention config permits.
+It exposes the following commands:
+
+- `login`: starts a visible browser for manual authentication
+- `calibrate`: runs the selector-discovery wizard
+- `run`: executes the full workflow
+- `export`: performs export and download only
+- `import-file`: imports an existing CSV without browser automation
+- `status`: shows current run status and lock state
+- `reauthenticate`: clears or refreshes auth state for a new login
+- `reset-database`: creates a backup and resets the SQLite database
+- `purge-expired`: removes expired operational artifacts
+
+The project also ships with [run.bat](run.bat), which activates the local `.venv` environment and forwards the command to the Python CLI.
+
+### 2.2 Configuration layer
+Configuration comes from [src/deliverect_sync/config.py](src/deliverect_sync/config.py).
+
+The application loads:
+
+- [config.yaml](config.yaml) for runtime behavior,
+- [selectors.yaml](selectors.yaml) for browser locators,
+- environment variables for override paths when present.
+
+Key configuration groups include:
+
+- `portal`: portal URL and portal type
+- `export`: date mode, locations, channels, statuses, requested fields, item splitting
+- `privacy`: PII inclusion and retention behavior
+- `output`: Excel output location and naming
+- `browser`: headless behavior and timeouts
+- `polling`: export polling intervals
+- `diagnostics`: logging and screenshots
+
+### 2.3 Browser and session automation
+The browser layer lives under [src/deliverect_sync/browser](src/deliverect_sync/browser).
+
+Main modules:
+
+- [src/deliverect_sync/browser/browser_factory.py](src/deliverect_sync/browser/browser_factory.py): creates Playwright browsers and contexts
+- [src/deliverect_sync/browser/session_manager.py](src/deliverect_sync/browser/session_manager.py): handles login, session verification, and permission checks
+- [src/deliverect_sync/browser/calibration.py](src/deliverect_sync/browser/calibration.py): interactive calibration wizard
+- [src/deliverect_sync/browser/locator_registry.py](src/deliverect_sync/browser/locator_registry.py): resolves selectors from YAML
+- [src/deliverect_sync/browser/pages](src/deliverect_sync/browser/pages): page objects for login, orders, operations, export dialog, and order detail views
+
+The current implementation is stateful and browser-driven. It relies on selector-based automation rather than a formal API integration.
 
 ---
 
-## 4. Security & Cryptography Details
+## 3. End-to-End Workflow
 
-- **PII Encryption (`security/pii.py`)**: Customer PII fields are encrypted at rest using `cryptography.fernet.Fernet`. The Fernet tokens are stored as raw `bytes` in Python and `BLOB` in SQLite, avoiding implicit base64 string conversion bugs.
-- **Key Management**: Keys are stored in the OS Credential Manager under:
-  - `deliverect_sync_auth_state_key` (Playwright session state)
-  - `deliverect_sync_pii_key` (Customer PII and raw rows)
+### 3.1 Authentication
+The workflow begins by checking whether encrypted auth state exists. If it does not, the user must authenticate manually.
+
+Authentication is handled by:
+
+- [src/deliverect_sync/security/auth_state.py](src/deliverect_sync/security/auth_state.py)
+- [src/deliverect_sync/security/encryption.py](src/deliverect_sync/security/encryption.py)
+
+The auth state is serialized to JSON, encrypted, and stored in the user profile area. The implementation uses Fernet encryption managed through the OS credential manager.
+
+### 3.2 Calibration
+Calibration is a guided process that asks the user to navigate Deliverect pages and confirms the relevant UI elements. The results are written to [selectors.yaml](selectors.yaml).
+
+### 3.3 Export workflow
+The orchestrator is [src/deliverect_sync/workflow/export_workflow.py](src/deliverect_sync/workflow/export_workflow.py).
+
+The workflow currently performs these stages:
+
+1. create a sync run record
+2. acquire a database lock
+3. authenticate and open a browser context
+4. verify the session and permissions
+5. open the Orders page
+6. apply configured filters
+7. capture the pre-export operations state
+8. request the export from the export dialog
+9. locate the newly created export job in the Operations page
+10. wait for the export operation to complete
+11. download the CSV
+12. import the CSV into SQLite
+13. generate an Excel report
+14. optionally delete the raw automated download
+
+### 3.4 Import workflow
+The importer is [src/deliverect_sync/importers/order_importer.py](src/deliverect_sync/importers/order_importer.py).
+
+It:
+
+- detects CSV format and delimiter,
+- maps headers to canonical names with [src/deliverect_sync/importers/header_mapper.py](src/deliverect_sync/importers/header_mapper.py),
+- validates rows,
+- parses dates and money into normalized Python values,
+- redacts PII for audit storage,
+- stores raw rows, import errors, and field mappings,
+- creates or updates orders,
+- appends status events,
+- builds item snapshots and line items.
+
+### 3.5 Excel export
+The Excel exporter is [src/deliverect_sync/exporters/excel_exporter.py](src/deliverect_sync/exporters/excel_exporter.py).
+
+The current exporter:
+
+- reads orders and items from SQLite,
+- decrypts enabled PII fields for output,
+- converts financial values into Decimal-aware data,
+- sanitizes values that could become formulas in Excel,
+- writes one or more sheets to an `.xlsx` file.
+
+### 3.6 Dashboard
+A read-only dashboard is implemented in [src/deliverect_sync/dashboard/app.py](src/deliverect_sync/dashboard/app.py).
+
+It presents:
+
+- overview metrics,
+- recent sync history,
+- data quality and import errors.
 
 ---
 
-## 5. Development Guide & Extension Points
+## 4. Core Data Model
 
-1. **Adding a new column from the CSV**:
-   - Add the canonical field to `HEADER_ALIASES` in `importers/header_mapper.py`. 
-   - Update the `Order` dataclass in `models.py`.
-   - Update `upsert_order()` schema in `storage/database.py` and `migrations.py`.
-   - Map it during `_parse_row()` in `importers/order_importer.py`.
+The canonical domain objects are defined in [src/deliverect_sync/models.py](src/deliverect_sync/models.py).
 
-2. **Handling Offline Import**:
-   - Use `run.bat import-file path/to/file.csv`. This bypasses Playwright entirely and feeds the CSV directly into `OrderImporter`. The file origin is marked as `USER_SUPPLIED` and is guaranteed not to be deleted.
+### 4.1 Core enums
+The model layer includes enums for:
 
-3. **Status Precedence Logic**:
-   - Do not assume chronological row order or import time equates to actual status event sequence. When adding logic that resolves state, rely on `EventTimeQuality` in `database.py`.
+- sync result state,
+- run status,
+- record kind,
+- mapping status,
+- source file origin,
+- event time quality,
+- location key source.
+
+### 4.2 Main dataclasses
+The main entities are:
+
+- `SyncRun`: metadata for a single workflow execution
+- `SourceFile`: metadata for a downloaded or user-supplied CSV
+- `Order`: the canonical order summary used for reporting
+- `OrderEvent`: append-only history of state changes
+- `OrderItemSnapshot`: a versioned snapshot of order items
+- `OrderItem`: a line item belonging to a snapshot
+- `RawExportRow`: redacted audit row
+- `ImportErrorRecord`: a persisted validation or import error
+- `RunLock`: database-backed lock for workflow concurrency control
+
+---
+
+## 5. Storage and Database Design
+
+The SQLite layer is implemented in [src/deliverect_sync/storage/database.py](src/deliverect_sync/storage/database.py) and the schema is built by [src/deliverect_sync/storage/migrations.py](src/deliverect_sync/storage/migrations.py).
+
+### 5.1 Database characteristics
+The database uses:
+
+- WAL mode for better concurrent reads/writes,
+- SQLite transactions for atomic updates,
+- explicit lock records to prevent overlapping workflow runs,
+- text storage for money values to preserve Decimal precision.
+
+### 5.2 Main tables
+
+- `run_locks`: tracks active execution locks
+- `sync_runs`: stores run metadata and final result
+- `source_files`: records imported or downloaded files
+- `field_mappings`: stores header mapping decisions per source file
+- `orders`: canonical order summary table
+- `order_events`: append-only event log for state changes
+- `order_item_snapshots`: versioned item snapshots
+- `order_items`: flattened line items for the active snapshot
+- `raw_export_rows`: redacted/raw-row audit table
+- `import_errors`: validation and parse errors
+
+### 5.3 Current persistence behavior
+The current implementation favors a simple local-first design over a distributed or service architecture. The database is expected to live under the user profile directory and is not designed for multi-user access.
+
+---
+
+## 6. Security and Privacy Model
+
+### 6.1 Authentication state
+Browser authentication state is encrypted and stored locally.
+
+### 6.2 PII protection
+PII (customer name, phone, email, address) is encrypted at rest when enabled in the configuration. The encryption logic is implemented in:
+
+- [src/deliverect_sync/security/pii.py](src/deliverect_sync/security/pii.py)
+- [src/deliverect_sync/security/encryption.py](src/deliverect_sync/security/encryption.py)
+
+### 6.3 Redaction and export safety
+The system redacts PII in raw-row storage and sanitizes values to reduce Excel formula injection risk. The exporter uses defensive handling for strings that start with formula-like characters.
+
+### 6.4 Key management
+Encryption keys are stored through the OS credential manager using `keyring`.
+
+---
+
+## 7. Important Current Implementation Notes
+
+The current implementation is functional but intentionally pragmatic. Some important characteristics are:
+
+- it is Windows-oriented and assumes a local desktop environment,
+- authentication is manual and browser-based,
+- the workflow relies on Deliverect UI selectors and page structure,
+- the importer is designed around CSV structure rather than a formal Deliverect API,
+- the database is local SQLite rather than a server-backed system,
+- the system is optimized for reliability and auditability more than for high-throughput or multi-tenant deployment.
+
+---
+
+## 8. Extension Points
+
+The most natural extension points are:
+
+1. adding new CSV columns by updating the header-map aliases and importer parsing logic,
+2. adding new browser page interactions by extending the page-object layer,
+3. improving selector robustness through richer calibration and fallback handling,
+4. expanding the dashboard with more analytics,
+5. adding retention policies and cleanup automation around raw files and screenshots,
+6. improving the import pipeline to support richer status normalization and duplicate resolution.
