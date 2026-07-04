@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deliverect-order-sync"
+version = "0.1.0"
+description = "Local automation tool for exporting Deliverect order data via official export interface"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+
+dependencies = [
+    "playwright>=1.40",
+    "typer[all]>=0.9",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "pyyaml>=6.0",
+    "openpyxl>=3.1",
+    "pandas>=2.1",
+    "keyring>=24.0",
+    "cryptography>=41.0",
+    "phonenumbers>=8.13",
+    "streamlit>=1.29",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "pytest-playwright>=0.4",
+    "flask>=3.0",
+    "ruff>=0.1",
+    "mypy>=1.7",
+    "types-pyyaml>=6.0",
+    "types-openpyxl>=3.1",
+]
+
+[project.scripts]
+deliverect-sync = "deliverect_sync.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "browser: marks tests requiring Playwright browser (deselect with '-m \"not browser\"')",
+    "slow: marks slow tests",
+]

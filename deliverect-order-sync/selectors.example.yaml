@@ -1,0 +1,185 @@
+# Deliverect UI Locator Configuration
+# Copy this file to selectors.yaml after running calibration.
+#
+# Each logical element has multiple locator alternatives tried in order.
+# Strategies: role, label, placeholder, test_id, text, css
+# Multi-language support: use regex patterns for English and Arabic.
+#
+# Run `python -m deliverect_sync calibrate` to auto-discover locators
+# for your specific Deliverect account and UI version.
+
+# UI metadata captured during calibration
+ui_profile:
+  portal: restaurant
+  language: en
+  # UI fingerprint hash (set by calibration wizard)
+  fingerprint: null
+  calibrated_at: null
+
+# Navigation elements
+orders_navigation:
+  alternatives:
+    - strategy: role
+      role: link
+      name_regex: "^(Orders|الطلبات)$"
+    - strategy: text
+      text_regex: "^(Orders|الطلبات)$"
+    - strategy: css
+      selector: "a[href*='/orders']"
+
+operations_navigation:
+  alternatives:
+    - strategy: role
+      role: link
+      name_regex: "^(Operations|العمليات)$"
+    - strategy: text
+      text_regex: "^(Operations|العمليات)$"
+    - strategy: css
+      selector: "a[href*='/operations']"
+
+# Orders page elements
+orders_more_menu:
+  alternatives:
+    - strategy: role
+      role: button
+      name_regex: "^(More|المزيد|⋯)$"
+    - strategy: text
+      text_regex: "^(More|المزيد)$"
+    - strategy: css
+      selector: "[data-testid='more-actions-button']"
+
+export_orders_menu_item:
+  alternatives:
+    - strategy: role
+      role: menuitem
+      name_regex: "^(Export orders|تصدير الطلبات)$"
+    - strategy: text
+      text_regex: "^(Export orders|تصدير الطلبات)$"
+
+# Export dialog elements
+export_dialog:
+  alternatives:
+    - strategy: role
+      role: dialog
+      name_regex: "^(Export orders|تصدير الطلبات)$"
+    - strategy: css
+      selector: "[role='dialog']"
+
+export_request_button:
+  alternatives:
+    - strategy: role
+      role: button
+      name_regex: "^(Request export|طلب التصدير)$"
+    - strategy: text
+      text_regex: "^(Request export|طلب التصدير)$"
+
+# Export dialog — field checkboxes
+export_field_checkbox:
+  # Used as a template; actual field names are substituted at runtime
+  alternatives:
+    - strategy: role
+      role: checkbox
+      name_regex: "{field_name}"
+    - strategy: label
+      label_regex: "{field_name}"
+
+# Export dialog — format selector
+export_format_select:
+  alternatives:
+    - strategy: role
+      role: combobox
+      name_regex: "^(Format|التنسيق)$"
+    - strategy: label
+      label_regex: "^(Format|التنسيق)$"
+
+# Export dialog — split items toggle
+export_split_items_toggle:
+  alternatives:
+    - strategy: role
+      role: checkbox
+      name_regex: "(?i)(split|separate|تقسيم)"
+    - strategy: label
+      label_regex: "(?i)(split|separate|تقسيم)"
+
+# Operations page elements
+operation_row:
+  alternatives:
+    - strategy: role
+      role: row
+    - strategy: css
+      selector: "[data-testid='operation-row']"
+    - strategy: css
+      selector: "tr.operation-row"
+
+operation_expand_button:
+  alternatives:
+    - strategy: role
+      role: button
+      name_regex: "^(Expand|Details|توسيع|التفاصيل)$"
+    - strategy: css
+      selector: "[data-testid='expand-operation']"
+
+download_link_button:
+  alternatives:
+    - strategy: role
+      role: button
+      name_regex: "^(Get download link|رابط التحميل)$"
+    - strategy: role
+      role: link
+      name_regex: "(?i)(download|تحميل)"
+    - strategy: text
+      text_regex: "(?i)(get download link|رابط التحميل)"
+
+# Date range elements in export dialog
+export_date_start:
+  alternatives:
+    - strategy: role
+      role: textbox
+      name_regex: "(?i)(start|from|من)"
+    - strategy: placeholder
+      placeholder_regex: "(?i)(start date|من تاريخ)"
+
+export_date_end:
+  alternatives:
+    - strategy: role
+      role: textbox
+      name_regex: "(?i)(end|to|إلى)"
+    - strategy: placeholder
+      placeholder_regex: "(?i)(end date|إلى تاريخ)"
+
+# Location selector in export dialog
+export_location_select:
+  alternatives:
+    - strategy: role
+      role: combobox
+      name_regex: "(?i)(location|الموقع)"
+    - strategy: label
+      label_regex: "(?i)(location|الموقع)"
+
+# Channel selector in export dialog
+export_channel_select:
+  alternatives:
+    - strategy: role
+      role: combobox
+      name_regex: "(?i)(channel|القناة)"
+    - strategy: label
+      label_regex: "(?i)(channel|القناة)"
+
+# Status selector in export dialog
+export_status_select:
+  alternatives:
+    - strategy: role
+      role: combobox
+      name_regex: "(?i)(status|الحالة)"
+    - strategy: label
+      label_regex: "(?i)(status|الحالة)"
+
+# Authentication detection
+authenticated_indicator:
+  alternatives:
+    - strategy: role
+      role: navigation
+    - strategy: css
+      selector: "nav[class*='sidebar'], nav[class*='menu']"
+    - strategy: text
+      text_regex: "^(Orders|Dashboard|الطلبات|لوحة القيادة)$"

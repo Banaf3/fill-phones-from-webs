@@ -1,0 +1,102 @@
+# Deliverect Order Sync Configuration
+# Copy this file to config.yaml and adjust settings for your restaurant.
+
+portal:
+  # Options: restaurant, enterprise
+  type: restaurant
+  base_url: "https://frontend.deliverect.com/"
+  # For enterprise accounts, use:
+  # type: enterprise
+  # base_url: "https://enterprise.deliverect.com/"
+
+export:
+  # Date mode: "rolling" (last N days) or "fixed" (specific date range)
+  date_mode: rolling
+  rolling_days: 3
+  # fixed_start: "2024-01-01"
+  # fixed_end: "2024-01-31"
+  timezone: "Asia/Riyadh"
+
+  locations:
+    - "Main Branch"
+
+  channels:
+    - "HungerStation"
+    - "Jahez"
+
+  statuses:
+    - "Accepted"
+    - "Finalized"
+    - "Canceled"
+    - "Failed"
+
+  custom_tags: []
+
+  requested_fields:
+    - "Pickup time"
+    - "Location"
+    - "Order ID"
+    - "Channel"
+    - "Delivery System"
+    - "Receipt ID"
+    - "Status"
+    - "Items"
+    - "PLU"
+    - "Quantity"
+    - "Total"
+    - "Fees"
+    - "Payment method"
+    - "Paid"
+
+  # Fields that must be present; export fails if they are unavailable
+  mandatory_fields:
+    - "Order ID"
+    - "Status"
+
+  split_items_into_separate_rows: true
+  format: csv
+
+fallback:
+  # Enable individual order detail extraction only when mandatory fields
+  # are missing from the CSV export.
+  order_detail_extraction: false
+  maximum_orders_per_run: 100
+
+privacy:
+  # Customer PII is DISABLED by default. Enable only when necessary
+  # and ensure you have a lawful basis for processing.
+  include_customer_name: false
+  include_customer_phone: false
+  include_customer_email: false
+  include_delivery_address: false
+  # Number of days to keep raw downloaded CSV files
+  raw_download_retention_days: 7
+
+output:
+  directory: "./output"
+  excel_filename_pattern: "deliverect_orders_{date}.xlsx"
+
+browser:
+  # Headed mode for interactive commands (login, calibrate)
+  # Headless mode for scheduled/automated runs
+  headless_for_scheduled: true
+  # Download timeout in seconds
+  download_timeout: 120
+  # Navigation timeout in milliseconds
+  navigation_timeout: 30000
+
+polling:
+  initial_interval_seconds: 2
+  max_interval_seconds: 15
+  max_wait_seconds: 600  # 10 minutes
+
+scheduling:
+  # Prevent concurrent runs
+  lock_timeout_seconds: 60
+
+diagnostics:
+  # Screenshots are DISABLED by default because they may contain PII
+  screenshots_enabled: false
+  screenshot_retention_days: 1
+  traces_enabled: false
+  log_level: INFO
