@@ -76,7 +76,9 @@ class ExportWorkflow:
             workflow_lock = self._db.acquire_lock("export_workflow", self._run_id)
         except DatabaseLockError as e:
             self._fail(RunStatus.FAILED, f"Lock error: {e}")
-            raise DeliverectSyncError(str(e), status=RunStatus.FAILED)
+            err = DeliverectSyncError(str(e))
+            err.status = RunStatus.FAILED
+            raise err
 
         try:
             # Stage 1: Authenticate

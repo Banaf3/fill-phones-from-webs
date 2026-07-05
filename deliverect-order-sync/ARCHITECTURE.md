@@ -19,7 +19,8 @@ Deliverect Order Sync is a Windows-first desktop automation tool that:
 
 The system is implemented as a Python package with a Typer-based CLI and a Playwright-driven browser workflow.
 
----
+### 1.1 UI Automation Classification
+Do not characterize UI export as an officially supported programmatic integration merely because the manual export workflow is documented. It is classified as `DOCUMENTED_MANUAL_WORKFLOW_AUTOMATION`. For unattended or recurring execution, the system issues a `CONTRACT_REVIEW_REQUIRED` notice unless the restaurant has written confirmation that its intended use is permitted.
 
 ## 2. Current Runtime Architecture
 
@@ -107,7 +108,11 @@ The workflow currently performs these stages:
 11. download the CSV
 12. import the CSV into SQLite
 13. generate an Excel report
-14. optionally delete the raw automated download
+14. delete the raw automated download (if retention is not enabled)
+
+**Important File Lifecycle Policy:**
+- A temporary CSV downloaded automatically by the workflow (`AUTOMATED_DOWNLOAD`) may be automatically deleted after a committed import.
+- A CSV explicitly supplied by the user (`USER_SUPPLIED`) must **never** be deleted or modified.
 
 ### 3.4 Import workflow
 The importer is [src/deliverect_sync/importers/order_importer.py](src/deliverect_sync/importers/order_importer.py).
@@ -120,9 +125,13 @@ It:
 - parses dates and money into normalized Python values,
 - redacts PII for audit storage,
 - stores raw rows, import errors, and field mappings,
-- creates or updates orders,
-- appends status events,
-- builds item snapshots and line items.
+- creates or updates the canonical order summary,
+- appends a new `OrderEvent` preserving the historical status (never erasing previous status history),
+- builds versioned `OrderItemSnapshot`s and line items (authoritative item snapshots use versioning).
+
+**Data Constraints:**
+- Never use the CSV row number as an order identity. The 48-hour uniqueness rule applies only after evidence establishes that a CSV field corresponds to Deliverect's API `channelOrderId`.
+- Imported status records are classified strictly as `SOURCE_EVENT`, `SOURCE_STATUS_SNAPSHOT`, or `IMPORT_OBSERVATION`.
 
 ### 3.5 Excel export
 The Excel exporter is [src/deliverect_sync/exporters/excel_exporter.py](src/deliverect_sync/exporters/excel_exporter.py).
@@ -192,11 +201,11 @@ The database uses:
 
 - `run_locks`: tracks active execution locks
 - `sync_runs`: stores run metadata and final result
-- `source_files`: records imported or downloaded files
+- `source_files`: records imported or downloaded files with their `SourceFileOrigin`
 - `field_mappings`: stores header mapping decisions per source file
-- `orders`: canonical order summary table
-- `order_events`: append-only event log for state changes
-- `order_item_snapshots`: versioned item snapshots
+- `orders`: canonical order summary table containing only current state (`current_status`, `first_seen_at`, `last_seen_at`)
+- `order_events`: append-only event log for state changes (`event_kind`, `raw_status`, `normalized_status`). Status precedence prefers authoritative event times over inferred times, uses deterministic reconciliation, and never deletes historical transitions.
+- `order_item_snapshots`: versioned item snapshots protecting historical state from overlapping imports
 - `order_items`: flattened line items for the active snapshot
 - `raw_export_rows`: redacted/raw-row audit table
 - `import_errors`: validation and parse errors

@@ -8,6 +8,7 @@ Commands:
   import-file    — Import a manually downloaded CSV
   status         — Show current status
   reauthenticate — Force re-login
+  scrape         — Direct UI scrape for order details
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from deliverect_sync.models import SyncRun
@@ -203,6 +204,27 @@ def run(
     except KeyboardInterrupt:
         console.print("\n[yellow]Run canceled by user.[/yellow]")
         raise typer.Exit(0)
+
+
+@app.command()
+def scrape(
+    config: Optional[str] = typer.Option(
+        None, "-c", "--config", help="Path to config file."
+    )
+) -> None:
+    """Directly scrape order item details from the UI."""
+    from deliverect_sync.workflow.direct_scrape import DirectScrapeWorkflow
+    setup_logging(log_level="INFO")
+    settings = _load_settings(config)
+    workflow = DirectScrapeWorkflow(settings)
+    console.print("[bold cyan]Starting direct UI scrape workflow...[/bold cyan]")
+    
+    try:
+        output_path = workflow.execute()
+        console.print(f"[bold green]Scrape complete! Saved to {output_path}[/bold green]")
+    except Exception as e:
+        console.print(f"[bold red]Scrape failed:[/bold red] {e}")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -433,18 +455,20 @@ def purge_expired(
         raise typer.Exit(1)
 
 
-def _colorize_status(status: RunStatus) -> str:
-    """Apply rich color to a status code."""
-    if status == RunStatus.SUCCESS:
-        return f"[green]{status.value}[/green]"
-    elif status == RunStatus.SUCCESS_WITH_WARNINGS:
-        return f"[yellow]{status.value}[/yellow]"
-    elif status == RunStatus.IN_PROGRESS:
-        return f"[blue]{status.value}[/blue]"
-    elif status in (RunStatus.NO_ORDERS, RunStatus.CANCELED_BY_USER):
-        return f"[dim]{status.value}[/dim]"
+def _colorize_status(status: Any) -> str:
+    """Apply rich color to a status code. Accepts RunStatus or SyncResult."""
+    val = status.value if hasattr(status, "value") else str(status)
+    val_upper = val.upper()
+    if val_upper == "SUCCESS":
+        return f"[green]{val}[/green]"
+    elif val_upper == "SUCCESS_WITH_WARNINGS":
+        return f"[yellow]{val}[/yellow]"
+    elif val_upper == "IN_PROGRESS":
+        return f"[blue]{val}[/blue]"
+    elif val_upper in ("NO_ORDERS", "CANCELED_BY_USER"):
+        return f"[dim]{val}[/dim]"
     else:
-        return f"[red]{status.value}[/red]"
+        return f"[red]{val}[/red]"
 
 
 def _display_run_result(result: "SyncRun", run_id: str) -> None:

@@ -1,21 +1,17 @@
-# Deliverect Order Sync
+# Deliverect Order Scraper
 
-A local application for downloading, parsing, and normalizing order data from Deliverect via browser automation.
+A robust, user-assisted automation tool for scraping customer phone numbers and branch information directly from the Deliverect Enterprise orders dashboard into formatted Excel files.
 
 ## Features
 
-- **Automated Export Workflow**: Uses Playwright to interactively log in, navigate to Orders, trigger CSV exports, and download the resulting file.
-- **Robust Field Mapping**: Intelligently maps varying Arabic and English CSV headers (e.g., "Order ID", "رقم الطلب", "Channel Order ID") to standard fields.
-- **PII Protection**: Field-level AES-256-GCM encryption for customer details (name, phone, email, address) using Windows Credential Manager.
-- **Normalization**: Standardizes phone numbers, dates, monetary values (including Arabic-Indic digits), and prevents CSV injection.
-- **Item Split Handling**: Flattens nested item exports into separate rows or handles single-row orders.
-- **Excel Generation**: Automatically generates a formatted Excel workbook with orders and items.
-- **Dashboard**: Includes a Streamlit dashboard to view sync history and data quality.
+- **Assisted Scraping Workflow (`scrape`)**: The primary feature of this repository. It automatically calculates the number of pages, expands order details, and securely extracts the customer phone numbers and branch locations from Deliverect's Enterprise UI.
+- **Perfect Excel Formatting**: Generates a clean `.xlsx` file natively formatted with Arabic column headers, sequential indexing, and chronologically ordered from oldest to newest.
+- **Smart Navigation**: Automatically flips through pagination and waits for UI elements to render completely without brittle timeouts.
 
 ## Requirements
 
 - Python 3.11+
-- Windows (uses Keyring for secure key storage)
+- Windows
 - Chromium browser (installed automatically via Playwright)
 
 ## Installation
@@ -42,59 +38,42 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Configuration
 
-Copy the example configuration files and edit them to match your setup:
+Copy the example configuration file to set your default URLs or output locations (if necessary):
 
 ```powershell
 Copy-Item config.example.yaml config.yaml
-Copy-Item selectors.example.yaml selectors.yaml
 ```
 
-Update `config.yaml` with your preferred locations, channels, and statuses to filter by.
+Update `config.yaml` to ensure the portal is set to `enterprise` and the base URL is `https://enterprise.deliverect.com/`.
 
 ## Usage
 
-The application is controlled via the CLI or the `run.bat` helper script.
+The application is controlled via the `run.bat` helper script.
 
-### 1. Calibrate Locators
+### 1. Scrape Phone Numbers
 
-Before the first run, or if the Deliverect interface changes, run the calibration wizard:
+This is the main workflow of the app. To start scraping:
 
 ```powershell
-.\run.bat calibrate
+.\run.bat scrape
 ```
 
-This opens a browser, prompts you to log in, and guides you through identifying the buttons and menus used by Deliverect. The results are saved to `selectors.yaml`.
+**Workflow:**
+1. A Chromium browser will open.
+2. The terminal will pause. You must use the browser to log in (if prompted), navigate to the Orders page, and apply any filters you need.
+3. Once the first page of the filtered orders is visible, return to the terminal and press **ENTER**.
+4. The system will automatically calculate the number of pages, iterate through all of them, extract the data, and output an Excel file into the `data/exports` folder.
 
-### 2. Run Sync
+### 2. Reauthenticate
 
-To start a full sync operation (export, download, import, format to Excel):
-
-```powershell
-.\run.bat sync
-```
-
-Useful variants:
+If you encounter session issues or Deliverect logs you out, you can renew your local session cookies by running:
 
 ```powershell
-.\run.bat sync --dry-run
-.\run.bat sync --export-only
-```
-
-### 3. View Dashboard
-
-To view the synchronization history and data quality metrics:
-
-```powershell
-.\run.bat dashboard
+.\run.bat reauthenticate
 ```
 
 ## Troubleshooting
 
-- In PowerShell, batch files must be prefixed with `.\\` or `./`.
-- The launcher expects a virtual environment named `.venv`.
-- If you see an authentication/session error, run `./run.bat reauthenticate`.
-- If you created a different virtual environment name, recreate it as `.venv` or adjust the launcher accordingly.
-
-## Security Note
-
-This tool **never** asks for or stores your Deliverect password. It uses an interactive browser window for you to log in manually, then saves the session state (cookies) securely encrypted using your OS keychain. If the session expires, it will prompt you to log in again.
+- In PowerShell, batch files must be prefixed with `.\` (e.g., `.\run.bat scrape`).
+- The script expects a virtual environment specifically named `.venv`.
+- If the bot extracts an empty file, ensure you actually waited for the first page to load completely before pressing Enter.

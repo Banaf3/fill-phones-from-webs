@@ -58,7 +58,7 @@ class ExcelExporter:
         logger.info("Generating Excel export for run %s", run_id[:8])
 
         # pyrefly: ignore [missing-attribute]
-        self._settings.output_dir.mkdir(parents=True, exist_ok=True)
+        self._settings.output.resolved_directory.mkdir(parents=True, exist_ok=True)
 
         orders = self._db.get_all_orders()
         if not orders:
@@ -76,7 +76,7 @@ class ExcelExporter:
         timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"deliverect_sync_{timestamp}.xlsx"
         # pyrefly: ignore [missing-attribute]
-        output_path = Path(self._settings.output_dir) / filename
+        output_path = Path(self._settings.output.resolved_directory) / filename
 
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
             self._write_sheet(writer, df_orders, "Orders")
@@ -192,7 +192,7 @@ class ExcelExporter:
         timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"deliverect_sync_{timestamp}_empty.xlsx"
         # pyrefly: ignore [missing-attribute]
-        output_path = Path(self._settings.output_dir) / filename
+        output_path = Path(self._settings.output.resolved_directory) / filename
         
         df = pd.DataFrame(columns=["Notice"])
         df.loc[0] = ["No orders found for this export run."]

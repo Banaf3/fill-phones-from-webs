@@ -16,17 +16,16 @@ import plotly.graph_objects as go
 # Ensure the package is importable if run directly
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from deliverect_sync.config import load_config
+from deliverect_sync.config import AppSettings
 from deliverect_sync.storage.database import DatabaseManager
-from deliverect_sync.storage.repositories import OrderRepository
 
 
-def load_data() -> tuple[DatabaseManager, OrderRepository]:
+def load_data() -> tuple[DatabaseManager, AppSettings]:
     """Load config and initialize database connection."""
-    config = load_config()
-    db = DatabaseManager(config.database_path)
-    repo = OrderRepository(db)
-    return db, repo
+    settings = AppSettings.load()
+    db = DatabaseManager(settings.db_path)
+    db.initialize()
+    return db, settings
 
 
 def main() -> None:
@@ -40,7 +39,7 @@ def main() -> None:
     st.title("Deliverect Order Sync Dashboard")
 
     try:
-        db, repo = load_data()
+        db, settings = load_data()
     except Exception as e:
         st.error(f"Failed to load database: {e}")
         return
@@ -49,7 +48,7 @@ def main() -> None:
     tab1, tab2, tab3 = st.tabs(["Overview", "Sync History", "Data Quality"])
 
     with tab1:
-        render_overview(db, repo)
+        render_overview(db)
 
     with tab2:
         render_sync_history(db)
@@ -58,12 +57,13 @@ def main() -> None:
         render_data_quality(db)
 
 
-def render_overview(db: DatabaseManager, repo: OrderRepository) -> None:
+def render_overview(db: DatabaseManager) -> None:
     """Render the main overview tab."""
     st.header("System Overview")
 
     # Metrics
-    total_orders = repo.count_orders()
+    conn = db._get_conn()
+    total_orders = conn.execute("SELECT COUNT(*) as cnt FROM orders").fetchone()["cnt"]
     last_run = db.get_last_run()
 
     col1, col2, col3, col4 = st.columns(4)
@@ -91,8 +91,11 @@ def render_overview(db: DatabaseManager, repo: OrderRepository) -> None:
 
     with col1:
         st.subheader("Orders by Status")
-        status_counts = repo.count_by_status()
-        if status_counts:
+        status_rows = conn.execute(
+            "SELECT current_status, COUNT(*) as cnt FROM orders GROUP BY current_status"
+        ).fetchall()
+        if status_rows:
+            status_counts = {r["current_status"] or "Unknown": r["cnt"] for r in status_rows}
             df_status = pd.DataFrame(list(status_counts.items()), columns=["Status", "Count"])
             fig = px.pie(df_status, values="Count", names="Status", hole=0.4)
             st.plotly_chart(fig, use_container_width=True)
@@ -101,8 +104,11 @@ def render_overview(db: DatabaseManager, repo: OrderRepository) -> None:
 
     with col2:
         st.subheader("Orders by Channel")
-        channel_counts = repo.count_by_channel()
-        if channel_counts:
+        channel_rows = conn.execute(
+            "SELECT channel, COUNT(*) as cnt FROM orders GROUP BY channel"
+        ).fetchall()
+        if channel_rows:
+            channel_counts = {r["channel"] or "Unknown": r["cnt"] for r in channel_rows}
             df_channel = pd.DataFrame(list(channel_counts.items()), columns=["Channel", "Count"])
             fig = px.bar(df_channel, x="Channel", y="Count", color="Channel")
             st.plotly_chart(fig, use_container_width=True)
@@ -114,26 +120,40 @@ def render_sync_history(db: DatabaseManager) -> None:
     """Render the sync history tab."""
     st.header("Recent Sync Runs")
 
-    runs = db.get_all_runs()
-    if not runs:
+    conn = db._get_conn()
+    rows = conn.execute("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 50").fetchall()
+    if not rows:
         st.info("No sync runs found")
         return
 
     # Convert to DataFrame for table
     run_data = []
-    for run in runs[:50]:  # Limit to last 50
+    for row in rows:
+        d = dict(row)
+        started = d.get("started_at", "")
+        finished = d.get("finished_at")
+        duration = 0
+        if started and finished:
+            from datetime import datetime
+            try:
+                s = datetime.fromisoformat(started)
+                f = datetime.fromisoformat(finished)
+                duration = int((f - s).total_seconds())
+            except Exception:
+                pass
+
         run_data.append({
-            "Run ID": run.id[:8],
-            "Date": run.started_at.strftime("%Y-%m-%d %H:%M") if run.started_at else "",
-            "Status": run.result.value if run.result else "",
-            "Duration (s)": int((run.finished_at - run.started_at).total_seconds()) if run.finished_at and run.started_at else 0,
-            "Imported Rows": run.imported_rows,
-            "New Orders": run.new_orders,
-            "Rejected Rows": run.rejected_rows,
+            "Run ID": d["id"][:8],
+            "Date": started[:16] if started else "",
+            "Status": d.get("result", ""),
+            "Duration (s)": duration,
+            "Imported Rows": d.get("imported_rows", 0),
+            "New Orders": d.get("new_orders", 0),
+            "Rejected Rows": d.get("rejected_rows", 0),
         })
 
     df_runs = pd.DataFrame(run_data)
-    
+
     # Apply coloring to Status column
     def color_status(val: str) -> str:
         if val == "SUCCESS":
@@ -144,7 +164,7 @@ def render_sync_history(db: DatabaseManager) -> None:
             return "color: blue"
         else:
             return "color: red"
-            
+
     st.dataframe(
         df_runs.style.map(color_status, subset=["Status"]),
         use_container_width=True,
@@ -156,18 +176,24 @@ def render_data_quality(db: DatabaseManager) -> None:
     """Render the data quality tab."""
     st.header("Data Quality & Errors")
 
-    errors = db.get_import_errors()
-    if not errors:
+    conn = db._get_conn()
+    error_rows = conn.execute(
+        "SELECT * FROM import_errors ORDER BY timestamp DESC LIMIT 200"
+    ).fetchall()
+
+    if not error_rows:
         st.success("No import errors recorded. Data quality is excellent.")
         return
 
-    # Aggregate errors by code
+    errors = [dict(r) for r in error_rows]
     df_errors = pd.DataFrame(errors)
+
+    # Aggregate errors by code
     error_counts = df_errors["error_code"].value_counts().reset_index()
     error_counts.columns = ["Error Code", "Count"]
 
     col1, col2 = st.columns([1, 2])
-    
+
     with col1:
         st.subheader("Errors by Type")
         fig = px.pie(error_counts, values="Count", names="Error Code")
@@ -175,9 +201,9 @@ def render_data_quality(db: DatabaseManager) -> None:
 
     with col2:
         st.subheader("Recent Error Log")
+        display_cols = [c for c in ["timestamp", "stage", "error_code", "error_message", "row_number"] if c in df_errors.columns]
         recent = df_errors.sort_values("timestamp", ascending=False).head(20)
-        display_df = recent[["timestamp", "stage", "error_code", "error_message", "row_number"]]
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(recent[display_cols], use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":

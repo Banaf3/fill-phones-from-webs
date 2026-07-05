@@ -1,12 +1,12 @@
-# fill-phones-from-webs (Deliverect Order Sync)
+# fill-phones-from-webs (Deliverect Phone Number Scraper)
 
-This repository contains the **Deliverect Order Sync** application, which automates the extraction, encryption, normalization, and export of restaurant orders from Deliverect.
+This repository contains an automated scraping tool designed to perfectly extract customer phone numbers and branch locations from Deliverect's Enterprise order dashboard into a clean Excel spreadsheet.
 
 ## How to use the system
 
-The easiest way to use this project on Windows is through the included launcher in the project folder. The most common pitfall is using the wrong command form in PowerShell; batch files must be invoked with `./` or `.\\`.
+The easiest way to use this project on Windows is through the included launcher in the project folder. 
 
-### 1. Windows PowerShell quick start
+### 1. Quick Start / Installation
 Open PowerShell in the project folder and run:
 
 ```powershell
@@ -23,54 +23,31 @@ If PowerShell blocks the activation script, run this once in the same terminal b
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-### 2. Create the configuration files
-Run these once before the first use:
+### 2. Extract Phone Numbers to Excel (Main Feature)
+To automatically scrape all order phone numbers and branches from the Deliverect screen into an Excel file, simply run:
 
 ```powershell
-Copy-Item config.example.yaml config.yaml
-Copy-Item selectors.example.yaml selectors.yaml
+.\run.bat scrape
 ```
 
-You can then edit `config.yaml` to choose the channels, statuses, date range, and privacy settings you want to use.
+**How it works:**
+1. A browser window will open to the Deliverect Enterprise Orders page.
+2. The terminal will pause and ask you to log in (if needed) and manually apply your desired filters (e.g. pickup time, location, delivery channel).
+3. Once you are looking at the first page of results you want to scrape, **go back to the terminal and press ENTER**.
+4. The bot will take over! It will automatically:
+   - Identify the total number of pages.
+   - Expand every order.
+   - Extract the customer's phone number and the branch name.
+   - Click to the next page and repeat.
+   - Generate a perfectly formatted `.xlsx` file containing the data from oldest order to newest order!
 
-### 3. Calibrate on first run
-Because Deliverect can change its website layout, the tool needs a calibration step the first time you use it, or whenever the interface changes.
-
-```powershell
-.\run.bat calibrate
-```
-
-What happens:
-- A browser window opens.
-- You log in to Deliverect manually.
-- The wizard asks you to navigate to the relevant pages and press Enter.
-- The detected element locations are saved to `selectors.yaml`.
-
-If the app says your session has expired, run:
+### 3. Re-Authenticating
+If your login expires or Deliverect logs you out, you can run this command to safely log back in:
 
 ```powershell
 .\run.bat reauthenticate
 ```
 
-### 4. Run a sync
-To download orders, process them, encrypt customer data, and generate the Excel report:
-
-```powershell
-.\run.bat sync
-```
-
-Useful options:
-- `./run.bat sync --dry-run`
-- `./run.bat sync --export-only`
-
-### 5. Open the dashboard
-To inspect sync history and data quality:
-
-```powershell
-.\run.bat dashboard
-```
-
 ### Important notes
-- In PowerShell, always use `./run.bat` or `.\\run.bat` instead of `run.bat`.
-- The launcher expects a virtual environment named `.venv`.
-- If you created `venv` instead of `.venv`, recreate it as `.venv` or update the launcher to match your environment name.
+- In PowerShell, always use `.\run.bat` (with the dot-slash) instead of just typing `run.bat`.
+- Do not touch the mouse or keyboard while the bot is automatically flipping through the pages (after you press Enter).

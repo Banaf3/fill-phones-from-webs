@@ -65,11 +65,31 @@ class MappingStatus(Enum):
     EXACT = "EXACT"
     ALIAS = "ALIAS"
     FUZZY = "FUZZY"
+    MAPPED = "MAPPED"
     AUTO_APPROVED = "AUTO_APPROVED"
     USER_APPROVED = "USER_APPROVED"
     REQUIRED_REVIEW = "REQUIRED_REVIEW"
     UNMAPPED = "UNMAPPED"
+    UNAVAILABLE = "UNAVAILABLE"
     UNRESOLVED = "UNRESOLVED"
+
+
+class MappingConfidence(Enum):
+    """Confidence level for field mapping."""
+    EXACT = "EXACT"
+    ALIAS = "ALIAS"
+    FUZZY = "FUZZY"
+    UNMAPPED = "UNMAPPED"
+
+
+class ExportOperationStatus(Enum):
+    """Status of a Deliverect export operation."""
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    EXPIRED = "EXPIRED"
+    UNKNOWN = "UNKNOWN"
 
 
 class SourceFileOrigin(Enum):
@@ -91,6 +111,21 @@ class LocationKeySource(Enum):
     LOCATION_ID = "LOCATION_ID"
     APPROVED_MAPPING = "APPROVED_MAPPING"
     NORMALIZED_NAME = "NORMALIZED_NAME"
+
+
+@dataclass
+class FieldMapping:
+    """Represents a mapping from a source header to a canonical field.
+
+    Used by both the export dialog (mapping UI labels to requested fields)
+    and the CSV importer (mapping CSV headers to canonical columns).
+    """
+    source_header: str
+    canonical_field: str | None = None
+    mapping_method: str = "NONE"
+    confidence: float | MappingConfidence = 0.0
+    status: MappingStatus = MappingStatus.UNMAPPED
+    approved_by_user: int = 1
 
 
 @dataclass
