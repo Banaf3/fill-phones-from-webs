@@ -33,7 +33,7 @@ class PortalConfig(BaseModel):
     """Portal connection settings."""
 
     type: PortalType = PortalType.RESTAURANT
-    base_url: str = "https://frontend.deliverect.com/"
+    base_url: str = "https://enterprise.deliverect.com/"
 
 
 class ExportConfig(BaseModel):

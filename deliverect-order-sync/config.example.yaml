@@ -4,7 +4,7 @@
 portal:
   # Options: restaurant, enterprise
   type: restaurant
-  base_url: "https://frontend.deliverect.com/"
+  base_url: "https://enterprise.deliverect.com/"
   # For enterprise accounts, use:
   # type: enterprise
   # base_url: "https://enterprise.deliverect.com/"

@@ -50,7 +50,7 @@ class LoginPage:
         """Navigate to the Deliverect portal.
 
         Args:
-            base_url: The portal URL (e.g., https://frontend.deliverect.com/).
+            base_url: The portal URL (e.g., https://enterprise.deliverect.com/).
         """
         logger.info("Navigating to portal: %s", base_url)
         self._page.goto(base_url, wait_until="domcontentloaded")
